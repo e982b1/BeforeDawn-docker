@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>批量提交漏洞 - BeforeDawn</title>
+  <script src="https://cdn.jsdelivr.net/npm/vue@3.3.4/dist/vue.global.prod.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/element-plus@2.3.8/dist/index.full.min.js"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/element-plus@2.3.8/dist/index.css">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Helvetica Neue', Arial, sans-serif; background: #f5f7fa; }
+    .page-container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+    .card { background: #fff; border-radius: 8px; box-shadow: 0 2px 12px rgba(0,0,0,0.1); margin-bottom: 20px; }
+    .card-header { padding: 15px 20px; border-bottom: 1px solid #eee; font-weight: 600; font-size: 16px; }
+    .card-body { padding: 20px; }
+    .toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+    .toolbar-left { display: flex; gap: 10px; }
+    .form-item { margin-bottom: 20px; }
+    .form-label { font-weight: 500; margin-bottom: 8px; display: block; }
+    .vuln-table { margin-top: 20px; }
+    .vuln-item { border: 1px solid #ddd; border-radius: 8px; padding: 15px; margin-bottom: 15px; background: #fafafa; }
+    .vuln-item-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+    .vuln-item-title { font-weight: 600; font-size: 14px; }
+    .vuln-item-remove { color: #f56c6c; cursor: pointer; }
+    .result-card { margin-top: 20px; }
+    .result-success { color: #67c23a; }
+    .result-failed { color: #f56c6c; }
+    .submit-btn { margin-top: 20px; text-align: center; }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div class="page-container">
+      <el-card class="card">
+        <template #header>
+          <div class="card-header">批量提交漏洞</div>
+        </template>
+        <div class="card-body">
+          <div class="toolbar">
+            <div class="toolbar-left">
+              <el-button type="primary" @click="addVuln">添加漏洞</el-button>
+              <el-button @click="loadTemplate">加载模板</el-button>
+            </div>
+            <div class="toolbar-right">
+              <span>共 {{ vulnerabilities.length }} 个漏洞</span>
+            </div>
+          </div>
+          
+          <div class="vuln-table">
+            <div v-for="(vuln, index) in vulnerabilities" :key="index" class="vuln-item">
+              <div class="vuln-item-header">
+                <span class="vuln-item-title">漏洞 #{{ index + 1 }}</span>
+                <span class="vuln-item-remove" @click="removeVuln(index)">删除</span>
+              </div>
+              
+              <el-form :model="vuln" label-width="120px" size="default">
+                <el-row :gutter="20">
+                  <el-col :span="12">
+                    <el-form-item label="漏洞标题">
+                      <el-input v-model="vuln.title" placeholder="请输入漏洞标题"></el-input>
+                    </el-form-item>
+                  </el-col>
+                  <el-col :span="12">
+                    <el-form-item label="关联资产">
+                      <el-select v-model="vuln.assetId" placeholder="请选择资产" filterable style="width: 100%">
+                        <el-option v-for="asset in assets" :key="asset.id" :label="asset.assetName" :value="String(asset.id)"></el-option>
+                      </el-select>
+                    </el-form-item>
+                  </el-col>
+                </el-row>
+                
+                <el-row :gutter="20">
+                  <el-col :span="8">
+                    <el-form-item label="漏洞来源">
+                      <el-select v-model="vuln.sourceType" placeholder="请选择来源" style="width: 100%">
+                        <el-option v-for="source in sources" :key="source.dictValue" :label="source.dictLabel" :value="source.dictValue"></el-option>
+                      </el-select>
+                    </el-form-item>
+                  </el-col>
+                  <el-col :span="8">
+                    <el-form-item label="漏洞类型">
+                      <el-select v-model="vuln.vulnType" placeholder="请选择类型" style="width: 100%">
+                        <el-option v-for="type in types" :key="type.dictValue" :label="type.dictLabel" :value="type.dictValue"></el-option>
+                      </el-select>
+                    </el-form-item>
+                  </el-col>
+                  <el-col :span="8">
+                    <el-form-item label="风险等级">
+                      <el-select v-model="vuln.riskLevel" placeholder="请选择等级" style="width: 100%">
+                        <el-option v-for="level in levels" :key="level.dictValue" :label="level.dictLabel" :value="level.dictValue"></el-option>
+                      </el-select>
+                    </el-form-item>
+                  </el-col>
+                </el-row>
+                
+                <el-form-item label="漏洞描述">
+                  <el-input v-model="vuln.description" type="textarea" :rows="4" placeholder="请输入漏洞描述"></el-input>
+                </el-form-item>
+              </el-form>
+            </div>
+          </div>
+          
+          <div class="submit-btn" v-if="vulnerabilities.length > 0">
+            <el-button type="primary" size="large" @click="submitBatch" :loading="submitting">提交所有漏洞</el-button>
+          </div>
+        </div>
+      </el-card>
+      
+      <el-card class="card result-card" v-if="results.length > 0">
+        <template #header>
+          <div class="card-header">提交结果</div>
+        </template>
+        <div class="card-body">
+          <el-alert :title="`提交完成：成功 ${successCount} 个，失败 ${failedCount} 个`" :type="failedCount > 0 ? 'warning' : 'success'" show-icon :closable="false"></el-alert>
+          
+          <el-table :data="results" stripe style="margin-top: 20px">
+            <el-table-column prop="index" label="#" width="60"></el-table-column>
+            <el-table-column prop="title" label="漏洞标题"></el-table-column>
+            <el-table-column prop="message" label="结果">
+              <template #default="{ row }">
+                <span :class="row.success ? 'result-success' : 'result-failed'">
+                  {{ row.success ? '成功' : '失败' }} - {{ row.message }}
+                </span>
+              </template>
+            </el-table-column>
+          </el-table>
+        </div>
+      </el-card>
+    </div>
+  </div>
+
+  <script>
+    const { createApp, ref, reactive, computed, onMounted } = Vue;
+    const { ElMessage } = ElementPlus;
+    
+    const app = createApp({
+      setup() {
+        const vulnerabilities = ref([]);
+        const assets = ref([]);
+        const sources = ref([
+          { dictValue: 'self_check', dictLabel: '自查发现' },
+          { dictValue: 'attack_defense', dictLabel: '攻防演练' },
+          { dictValue: 'superior_report', dictLabel: '上级通报' },
+          { dictValue: 'penetration_test', dictLabel: '渗透测试' },
+          { dictValue: 'code_audit', dictLabel: '代码审计' },
+          { dictValue: 'security_scan', dictLabel: '安全扫描' },
+          { dictValue: 'external_report', dictLabel: '外部报告' },
+          { dictValue: 'user_feedback', dictLabel: '用户反馈' },
+          { dictValue: 'emergency', dictLabel: '应急响应' },
+          { dictValue: 'other', dictLabel: '其他' }
+        ]);
+        const types = ref([
+          { dictValue: 'sql_injection', dictLabel: 'SQL注入' },
+          { dictValue: 'xss', dictLabel: 'XSS跨站脚本' },
+          { dictValue: 'csrf', dictLabel: 'CSRF跨站请求伪造' },
+          { dictValue: 'file_upload', dictLabel: '文件上传漏洞' },
+          { dictValue: 'file_inclusion', dictLabel: '文件包含漏洞' },
+          { dictValue: 'command_injection', dictLabel: '命令执行' },
+          { dictValue: 'code_execution', dictLabel: '代码执行' },
+          { dictValue: 'broken_access_control', dictLabel: '越权访问' },
+          { dictValue: 'info_disclosure', dictLabel: '敏感信息泄露' },
+          { dictValue: 'weak_password', dictLabel: '弱口令' },
+          { dictValue: 'unauthorized_access', dictLabel: '未授权访问' },
+          { dictValue: 'xxe', dictLabel: 'XXE漏洞' },
+          { dictValue: 'ssrf', dictLabel: 'SSRF漏洞' },
+          { dictValue: 'deserialization', dictLabel: '反序列化漏洞' },
+          { dictValue: 'business_logic', dictLabel: '逻辑漏洞' },
+          { dictValue: 'misconfiguration', dictLabel: '配置错误' },
+          { dictValue: 'middleware', dictLabel: '中间件漏洞' },
+          { dictValue: 'other', dictLabel: '其他' }
+        ]);
+        const levels = ref([
+          { dictValue: 'critical', dictLabel: '严重' },
+          { dictValue: 'high', dictLabel: '高危' },
+          { dictValue: 'medium', dictLabel: '中危' },
+          { dictValue: 'low', dictLabel: '低危' }
+        ]);
+        
+        const submitting = ref(false);
+        const results = ref([]);
+        
+        const successCount = computed(() => results.value.filter(r => r.success).length);
+        const failedCount = computed(() => results.value.filter(r => !r.success).length);
+        
+        const createEmptyVuln = () => ({
+          title: '',
+          sourceType: '',
+          vulnType: '',
+          riskLevel: '',
+          description: '',
+          assetId: ''
+        });
+        
+        const addVuln = () => {
+          vulnerabilities.value.push(createEmptyVuln());
+        };
+        
+        const removeVuln = (index) => {
+          vulnerabilities.value.splice(index, 1);
+        };
+        
+        const loadAssets = async () => {
+          try {
+            const token = localStorage.getItem('token') || localStorage.getItem('Authorization') || '';
+            const response = await fetch('/api/asset/list?current=1&size=1000', {
+              headers: { 'Authorization': 'Bearer ' + token.replace(/"/g, '') }
+            });
+            const data = await response.json();
+            if (data.code === 200) {
+              assets.value = data.result.records || [];
+            }
+          } catch (error) {
+            console.error('加载资产列表失败:', error);
+            ElMessage.error('加载资产列表失败');
+          }
+        };
+        
+        const loadTemplate = () => {
+          vulnerabilities.value = [
+            { title: 'SQL注入漏洞示例', sourceType: 'self_check', vulnType: 'sql_injection', riskLevel: 'high', description: '在用户登录接口存在SQL注入漏洞，攻击者可通过构造恶意SQL语句获取数据库敏感信息。', assetId: '' },
+            { title: 'XSS跨站脚本漏洞示例', sourceType: 'security_scan', vulnType: 'xss', riskLevel: 'medium', description: '在评论功能处存在存储型XSS漏洞，攻击者可注入恶意JavaScript代码窃取用户Cookie。', assetId: '' }
+          ];
+        };
+        
+        const submitBatch = async () => {
+          if (vulnerabilities.value.length === 0) {
+            ElMessage.warning('请先添加漏洞');
+            return;
+          }
+          
+          const token = localStorage.getItem('token') || localStorage.getItem('Authorization') || '';
+          
+          submitting.value = true;
+          results.value = [];
+          
+          try {
+            const response = await fetch('/api/vulnerability/batch-submit', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer ' + token.replace(/"/g, '')
+              },
+              body: JSON.stringify({ vulnerabilities: vulnerabilities.value })
+            });
+            
+            const data = await response.json();
+            if (data.code === 200) {
+              results.value = data.result.results || [];
+              ElMessage.success('批量提交完成');
+            } else {
+              ElMessage.error(data.message || '提交失败');
+            }
+          } catch (error) {
+            console.error('提交失败:', error);
+            ElMessage.error('提交失败: ' + error.message);
+          } finally {
+            submitting.value = false;
+          }
+        };
+        
+        onMounted(() => {
+          loadAssets();
+          addVuln();
+        });
+        
+        return {
+          vulnerabilities,
+          assets,
+          sources,
+          types,
+          levels,
+          submitting,
+          results,
+          successCount,
+          failedCount,
+          addVuln,
+          removeVuln,
+          loadTemplate,
+          submitBatch
+        };
+      }
+    });
+    
+    app.use(ElementPlus);
+    app.mount('#app');
+  </script>
+</body>
+</html>
