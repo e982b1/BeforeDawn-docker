@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>批量提交漏洞 - BeforeDawn 漏洞管理平台</title>
+  <script src="https://unpkg.com/vue@3.3.4/dist/vue.global.prod.js"></script>
+  <script src="https://unpkg.com/element-plus@2.3.14/dist/index.full.js"></script>
+  <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/element-plus@2.3.14/dist/index.css">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Helvetica Neue', Helvetica, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', Arial, sans-serif; background: #f5f7fa; }
+    .batch-container { padding: 20px; max-width: 1600px; margin: 0 auto; }
+    .page-header { background: #fff; padding: 20px; border-radius: 4px; margin-bottom: 20px; box-shadow: 0 2px 12px rgba(0,0,0,0.1); }
+    .page-title { font-size: 20px; font-weight: 600; color: #303133; margin-bottom: 15px; }
+    .toolbar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+    .main-content { background: #fff; padding: 20px; border-radius: 4px; box-shadow: 0 2px 12px rgba(0,0,0,0.1); }
+    .form-section { margin-bottom: 30px; padding-bottom: 20px; border-bottom: 1px solid #ebeef5; }
+    .form-row { display: flex; gap: 15px; margin-bottom: 15px; flex-wrap: wrap; }
+    .form-item { flex: 1; min-width: 200px; }
+    .form-item label { display: block; margin-bottom: 8px; font-size: 14px; color: #606266; }
+    .table-toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+    .table-info { color: #909399; font-size: 14px; }
+    .edit-table { width: 100%; margin-bottom: 20px; }
+    .edit-table .el-input { width: 100%; }
+    .edit-table .el-select { width: 100%; }
+    .required-star { color: #f56c6c; margin-right: 4px; }
+    .submit-area { display: flex; gap: 15px; justify-content: center; padding: 20px 0; }
+    .template-download { color: #409eff; cursor: pointer; text-decoration: underline; }
+    .template-download:hover { color: #66b1ff; }
+    .error-text { color: #f56c6c; font-size: 12px; }
+    .success-text { color: #67c23a; font-size: 12px; }
+    .status-tag { padding: 2px 8px; border-radius: 4px; font-size: 12px; }
+    .status-pending { background: #fdf6ec; color: #e6a23c; }
+    .status-success { background: #f0f9ff; color: #67c23a; }
+    .status-error { background: #fef0f0; color: #f56c6c; }
+    .result-summary { background: #f5f7fa; padding: 15px; border-radius: 4px; margin-bottom: 20px; }
+    .result-item { display: inline-block; margin-right: 30px; font-size: 14px; }
+    .result-item span { font-weight: 600; margin-left: 5px; }
+    .success-count { color: #67c23a; }
+    .error-count { color: #f56c6c; }
+    .empty-tip { text-align: center; padding: 40px 0; color: #909399; }
+    .batch-mode-tabs { margin-bottom: 20px; }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div class="batch-container">
+      <div class="page-header">
+        <h1 class="page-title">批量提交漏洞</h1>
+        <div class="toolbar">
+          <el-button type="primary" @click="handleAddRow" :icon="Plus">新增漏洞行</el-button>
+          <el-button @click="handleImportExcel" :icon="Upload">导入 Excel</el-button>
+          <el-button @click="handleExportTemplate" :icon="Download">下载模板</el-button>
+          <el-button type="danger" @click="handleClearAll" :icon="Delete">清空列表</el-button>
+          <el-button type="success" @click="handleSubmitAll" :icon="Check" :loading="submitting" :disabled="tableData.length === 0">提交全部</el-button>
+        </div>
+      </div>
+
+      <div class="main-content">
+        <div class="form-section">
+          <el-form :model="commonFields" label-width="120px" size="default">
+            <div class="form-row">
+              <el-form-item label="通用资产" class="form-item">
+                <el-select v-model="commonFields.assetId" placeholder="选择默认关联资产" clearable filterable @change="handleAssetChange">
+                  <el-option v-for="asset in assetList" :key="asset.id" :label="asset.assetName + ' (' + asset.assetCode + ')'" :value="asset.id"></el-option>
+                </el-select>
+              </el-form-item>
+              <el-form-item label="通用漏洞来源" class="form-item">
+                <el-select v-model="commonFields.sourceType" placeholder="选择默认来源" clearable>
+                  <el-option v-for="item in dictData.vuln_source" :key="item.dictValue" :label="item.dictLabel" :value="item.dictValue"></el-option>
+                </el-select>
+              </el-form-item>
+              <el-form-item label="通用风险等级" class="form-item">
+                <el-select v-model="commonFields.riskLevel" placeholder="选择默认风险等级" clearable>
+                  <el-option v-for="item in dictData.risk_level" :key="item.dictValue" :label="item.dictLabel" :value="item.dictValue"></el-option>
+                </el-select>
+              </el-form-item>
+            </div>
+          </el-form>
+        </div>
+
+        <div v-if="submitResult.show" class="result-summary">
+          <div class="result-item">总计: <span>{{ submitResult.total }}</span></div>
+          <div class="result-item success-count">成功: <span>{{ submitResult.success }}</span></div>
+          <div class="result-item error-count">失败: <span>{{ submitResult.failed }}</span></div>
+          <el-button style="margin-left: 20px" size="small" @click="submitResult.show = false">关闭</el-button>
+        </div>
+
+        <div v-if="tableData.length === 0" class="empty-tip">
+          <p>暂无漏洞数据，请点击"新增漏洞行"或"导入 Excel"添加</p>
+        </div>
+
+        <el-table v-else :data="tableData" border class="edit-table" style="width: 100%" row-key="uuid" :header-cell-style="{ background: '#f5f7fa', color: '#606266' }">
+          <el-table-column type="index" label="序号" width="60" align="center"></el-table-column>
+          <el-table-column label="操作" width="80" align="center">
+            <template #default="scope">
+              <el-button type="danger" size="small" text @click="handleDeleteRow(scope.$index)" :icon="Delete">删除</el-button>
+            </template>
+          </el-table-column>
+          <el-table-column label="状态" width="100" align="center">
+            <template #default="scope">
+              <span v-if="scope.row.status === 'pending'" class="status-tag status-pending">待提交</span>
+              <span v-else-if="scope.row.status === 'submitting'" class="status-tag status-pending">提交中...</span>
+              <span v-else-if="scope.row.status === 'success'" class="status-tag status-success">已提交</span>
+              <span v-else-if="scope.row.status === 'error'" class="status-tag status-error">{{ scope.row.errorMsg || '失败' }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="title" label="漏洞标题" width="220" required>
+            <template #default="scope">
+              <el-input v-model="scope.row.title" placeholder="5-200字符" maxlength="200" show-word-limit></el-input>
+              <div v-if="scope.row.errors?.title" class="error-text">{{ scope.row.errors.title }}</div>
+            </template>
+          </el-table-column>
+          <el-table-column prop="vulnType" label="漏洞类型" width="150">
+            <template #default="scope">
+              <el-select v-model="scope.row.vulnType" placeholder="选择类型" filterable>
+                <el-option v-for="item in dictData.vuln_type" :key="item.dictValue" :label="item.dictLabel" :value="item.dictValue"></el-option>
+              </el-select>
+              <div v-if="scope.row.errors?.vulnType" class="error-text">{{ scope.row.errors.vulnType }}</div>
+            </template>
+          </el-table-column>
+          <el-table-column prop="riskLevel" label="风险等级" width="120">
+            <template #default="scope">
+              <el-select v-model="scope.row.riskLevel" placeholder="选择等级">
+                <el-option v-for="item in dictData.risk_level" :key="item.dictValue" :label="item.dictLabel" :value="item.dictValue"></el-option>
+              </el-select>
+              <div v-if="scope.row.errors?.riskLevel" class="error-text">{{ scope.row.errors.riskLevel }}</div>
+            </template>
+          </el-table-column>
+          <el-table-column prop="sourceType" label="漏洞来源" width="150">
+            <template #default="scope">
+              <el-select v-model="scope.row.sourceType" placeholder="选择来源">
+                <el-option v-for="item in dictData.vuln_source" :key="item.dictValue" :label="item.dictLabel" :value="item.dictValue"></el-option>
+              </el-select>
+              <div v-if="scope.row.errors?.sourceType" class="error-text">{{ scope.row.errors.sourceType }}</div>
+            </template>
+          </el-table-column>
+          <el-table-column prop="assetId" label="关联资产" width="200">
+            <template #default="scope">
+              <el-select v-model="scope.row.assetId" placeholder="选择资产" filterable clearable>
+                <el-option v-for="asset in assetList" :key="asset.id" :label="asset.assetName + ' (' + asset.assetCode + ')'" :value="asset.id"></el-option>
+              </el-select>
+              <div v-if="scope.row.errors?.assetId" class="error-text">{{ scope.row.errors.assetId }}</div>
+            </template>
+          </el-table-column>
+          <el-table-column prop="description" label="漏洞描述">
+            <template #default="scope">
+              <el-input v-model="scope.row.description" type="textarea" :rows="3" placeholder="至少20字符，描述漏洞位置、成因、复现步骤、危害和修复建议" maxlength="5000" show-word-limit></el-input>
+              <div v-if="scope.row.errors?.description" class="error-text">{{ scope.row.errors.description }}</div>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
+    </div>
+
+    <input type="file" ref="excelInput" accept=".xlsx,.xls" style="display:none" @change="handleFileChange">
+  </div>
+
+  <script>
+    const { createApp, ref, reactive, onMounted } = Vue;
+    const { ElMessage, ElMessageBox } = ElementPlus;
+
+    const API_BASE = '/api';
+    const ASSET_LIST_API = API_BASE + '/asset/list';
+    const VULN_SUBMIT_API = API_BASE + '/vulnerability/submit';
+    const DICT_API = API_BASE + '/dict/data/vuln_type';
+    const RISK_LEVEL_API = API_BASE + '/dict/data/risk_level';
+    const VULN_SOURCE_API = API_BASE + '/dict/data/vuln_source';
+
+    function generateUUID() {
+      return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+        const r = Math.random() * 16 | 0;
+        const v = c === 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+      });
+    }
+
+    function getToken() {
+      return localStorage.getItem('token') || '';
+    }
+
+    function createEmptyRow() {
+      return {
+        uuid: generateUUID(),
+        title: '',
+        description: '',
+        vulnType: '',
+        riskLevel: '',
+        sourceType: '',
+        assetId: '',
+        status: 'pending',
+        errors: {}
+      };
+    }
+
+    const app = createApp({
+      setup() {
+        const tableData = ref([]);
+        const assetList = ref([]);
+        const submitting = ref(false);
+        const excelInput = ref(null);
+
+        const commonFields = reactive({
+          assetId: '',
+          sourceType: '',
+          riskLevel: ''
+        });
+
+        const dictData = reactive({
+          vuln_type: [],
+          risk_level: [],
+          vuln_source: []
+        });
+
+        const submitResult = reactive({
+          show: false,
+          total: 0,
+          success: 0,
+          failed: 0
+        });
+
+        const validateRow = (row) => {
+          const errors = {};
+          if (!row.title || row.title.length < 5 || row.title.length > 200) {
+            errors.title = '标题长度5-200字符';
+          }
+          if (!row.vulnType) {
+            errors.vulnType = '请选择漏洞类型';
+          }
+          if (!row.riskLevel) {
+            errors.riskLevel = '请选择风险等级';
+          }
+          if (!row.sourceType) {
+            errors.sourceType = '请选择漏洞来源';
+          }
+          if (!row.assetId) {
+            errors.assetId = '请选择关联资产';
+          }
+          if (!row.description || row.description.length < 20) {
+            errors.description = '描述至少20字符';
+          }
+          row.errors = errors;
+          return Object.keys(errors).length === 0;
+        };
+
+        const loadAssets = async () => {
+          try {
+            const token = getToken();
+            const response = await fetch(ASSET_LIST_API + '?current=1&size=1000', {
+              headers: { 'Authorization': 'Bearer ' + token }
+            });
+            if (response.ok) {
+              const data = await response.json();
+              assetList.value = data.records || [];
+            }
+          } catch (error) {
+            console.error('加载资产列表失败:', error);
+          }
+        };
+
+        const loadDictData = async () => {
+          const token = getToken();
+          const headers = { 'Authorization': 'Bearer ' + token };
+
+          const loadDict = async (url, key) => {
+            try {
+              const response = await fetch(url, { headers });
+              if (response.ok) {
+                const data = await response.json();
+                dictData[key] = data.data || [];
+              }
+            } catch (error) {
+              console.error('加载字典失败:', error);
+            }
+          };
+
+          await Promise.all([
+            loadDict(DICT_API, 'vuln_type'),
+            loadDict(RISK_LEVEL_API, 'risk_level'),
+            loadDict(VULN_SOURCE_API, 'vuln_source')
+          ]);
+        };
+
+        const handleAddRow = () => {
+          const newRow = createEmptyRow();
+          newRow.assetId = commonFields.assetId;
+          newRow.sourceType = commonFields.sourceType;
+          newRow.riskLevel = commonFields.riskLevel;
+          tableData.value.push(newRow);
+        };
+
+        const handleDeleteRow = (index) => {
+          tableData.value.splice(index, 1);
+        };
+
+        const handleClearAll = async () => {
+          if (tableData.value.length === 0) return;
+          try {
+            await ElMessageBox.confirm('确定要清空所有漏洞数据吗？', '提示', {
+              confirmButtonText: '确定',
+              cancelButtonText: '取消',
+              type: 'warning'
+            });
+            tableData.value = [];
+            submitResult.show = false;
+          } catch (e) {}
+        };
+
+        const handleAssetChange = (value) => {
+          tableData.value.forEach(row => {
+            if (!row.assetId) {
+              row.assetId = value;
+            }
+          });
+        };
+
+        const handleImportExcel = () => {
+          excelInput.value.click();
+        };
+
+        const handleFileChange = (event) => {
+          const file = event.target.files[0];
+          if (!file) return;
+
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            try {
+              const data = new Uint8Array(e.target.result);
+              const workbook = XLSX.read(data, { type: 'array' });
+              const sheetName = workbook.SheetNames[0];
+              const sheet = workbook.Sheets[sheetName];
+              const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+
+              if (jsonData.length < 2) {
+                ElMessage.warning('Excel 文件内容为空或格式不正确');
+                return;
+              }
+
+              const headers = jsonData[0].map(h => String(h).trim());
+              const titleIdx = headers.findIndex(h => h.includes('标题') || h.includes('title'));
+              const typeIdx = headers.findIndex(h => h.includes('类型') || h.includes('type'));
+              const levelIdx = headers.findIndex(h => h.includes('等级') || h.includes('level'));
+              const sourceIdx = headers.findIndex(h => h.includes('来源') || h.includes('source'));
+              const assetIdx = headers.findIndex(h => h.includes('资产') || h.includes('asset'));
+              const descIdx = headers.findIndex(h => h.includes('描述') || h.includes('description'));
+
+              const importRows = [];
+              for (let i = 1; i < jsonData.length; i++) {
+                const row = jsonData[i];
+                if (!row || row.length === 0 || !row.some(cell => cell)) continue;
+
+                const newRow = createEmptyRow();
+                newRow.title = titleIdx >= 0 ? String(row[titleIdx] || '').trim() : '';
+                newRow.description = descIdx >= 0 ? String(row[descIdx] || '').trim() : '';
+
+                const vulnTypeVal = typeIdx >= 0 ? String(row[typeIdx] || '').trim() : '';
+                const matchedType = dictData.vuln_type.find(t => t.dictLabel === vulnTypeVal || t.dictValue === vulnTypeVal);
+                newRow.vulnType = matchedType ? matchedType.dictValue : '';
+
+                const levelVal = levelIdx >= 0 ? String(row[levelIdx] || '').trim() : '';
+                const matchedLevel = dictData.risk_level.find(l => l.dictLabel === levelVal || l.dictValue === levelVal);
+                newRow.riskLevel = matchedLevel ? matchedLevel.dictValue : '';
+
+                const sourceVal = sourceIdx >= 0 ? String(row[sourceIdx] || '').trim() : '';
+                const matchedSource = dictData.vuln_source.find(s => s.dictLabel === sourceVal || s.dictValue === sourceVal);
+                newRow.sourceType = matchedSource ? matchedSource.dictValue : '';
+
+                const assetVal = assetIdx >= 0 ? String(row[assetIdx] || '').trim() : '';
+                if (assetVal) {
+                  const matchedAsset = assetList.value.find(a => a.assetName === assetVal || a.assetCode === assetVal);
+                  if (matchedAsset) newRow.assetId = matchedAsset.id;
+                }
+
+                if (!newRow.assetId) newRow.assetId = commonFields.assetId;
+                if (!newRow.sourceType) newRow.sourceType = commonFields.sourceType;
+                if (!newRow.riskLevel) newRow.riskLevel = commonFields.riskLevel;
+
+                importRows.push(newRow);
+              }
+
+              tableData.value = [...tableData.value, ...importRows];
+              ElMessage.success('成功导入 ' + importRows.length + ' 条漏洞数据');
+            } catch (error) {
+              console.error('解析 Excel 失败:', error);
+              ElMessage.error('解析 Excel 文件失败');
+            }
+          };
+          reader.readAsArrayBuffer(file);
+          event.target.value = '';
+        };
+
+        const handleExportTemplate = () => {
+          const templateData = [
+            ['漏洞标题', '漏洞类型', '风险等级', '漏洞来源', '资产名称/编码', '漏洞描述'],
+            ['示例：SQL注入漏洞', 'SQL注入', '高危', '自查发现', 'Web应用系统', '1. 漏洞位置：...']
+          ];
+          const ws = XLSX.utils.aoa_to_sheet(templateData);
+          const wb = XLSX.utils.book_new();
+          XLSX.utils.book_append_sheet(wb, ws, '漏洞导入模板');
+          XLSX.writeFile(wb, '漏洞批量导入模板.xlsx');
+        };
+
+        const handleSubmitAll = async () => {
+          const rowsToSubmit = tableData.value.filter(row => row.status === 'pending' || row.status === 'error');
+          if (rowsToSubmit.length === 0) {
+            ElMessage.warning('没有需要提交的漏洞');
+            return;
+          }
+
+          const validRows = [];
+          for (const row of rowsToSubmit) {
+            if (validateRow(row)) {
+              validRows.push(row);
+            }
+          }
+
+          if (validRows.length === 0) {
+            ElMessage.error('请检查表单填写是否正确');
+            return;
+          }
+
+          try {
+            await ElMessageBox.confirm(
+              '即将提交 ' + validRows.length + ' 条漏洞，是否继续？',
+              '确认提交',
+              { confirmButtonText: '确定', cancelButtonText: '取消', type: 'info' }
+            );
+          } catch (e) {
+            return;
+          }
+
+          submitting.value = true;
+          submitResult.show = true;
+          submitResult.total = validRows.length;
+          submitResult.success = 0;
+          submitResult.failed = 0;
+
+          const token = getToken();
+          const headers = { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token };
+
+          for (const row of validRows) {
+            row.status = 'submitting';
+
+            try {
+              const payload = {
+                title: row.title,
+                description: row.description,
+                vulnType: row.vulnType,
+                riskLevel: row.riskLevel,
+                sourceType: row.sourceType,
+                assetId: row.assetId
+              };
+
+              const response = await fetch(VULN_SUBMIT_API, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify(payload)
+              });
+
+              if (response.ok) {
+                row.status = 'success';
+                submitResult.success++;
+              } else {
+                const errorData = await response.json().catch(() => ({ message: '提交失败' }));
+                row.status = 'error';
+                row.errorMsg = errorData.message || '提交失败';
+                submitResult.failed++;
+              }
+            } catch (error) {
+              row.status = 'error';
+              row.errorMsg = '网络错误';
+              submitResult.failed++;
+            }
+          }
+
+          submitting.value = false;
+          ElMessage({
+            type: submitResult.failed === 0 ? 'success' : 'warning',
+            message: '提交完成：成功 ' + submitResult.success + ' 条，失败 ' + submitResult.failed + ' 条'
+          });
+        };
+
+        onMounted(() => {
+          loadAssets();
+          loadDictData();
+        });
+
+        return {
+          tableData,
+          assetList,
+          submitting,
+          excelInput,
+          commonFields,
+          dictData,
+          submitResult,
+          handleAddRow,
+          handleDeleteRow,
+          handleClearAll,
+          handleAssetChange,
+          handleImportExcel,
+          handleFileChange,
+          handleExportTemplate,
+          handleSubmitAll
+        };
+      }
+    });
+
+    app.use(ElementPlus);
+    app.mount('#app');
+  </script>
+</body>
+</html>
