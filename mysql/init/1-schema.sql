@@ -501,3 +501,50 @@ CREATE TABLE `sys_operation_log` (
 -- 建表SQL结束
 -- 24张表全部创建完成！（新增RBAC的4张表：角色、权限、用户角色关联、角色权限关联；新增3张：告警配置、登录日志、操作日志）
 -- ============================================
+-- ============================================
+-- 8. 增补：资产操作日志、告警日志
+-- ============================================
+
+DROP TABLE IF EXISTS `asset_operation_log`;
+CREATE TABLE `asset_operation_log` (
+    `id` BIGINT NOT NULL COMMENT 'ID',
+    `asset_id` BIGINT NOT NULL COMMENT '资产ID',
+    `asset_code` VARCHAR(100) COMMENT '资产编号',
+    `operation_type` VARCHAR(50) NOT NULL COMMENT '操作类型',
+    `operation_desc` TEXT COMMENT '操作描述',
+    `operator_id` BIGINT COMMENT '操作人ID',
+    `operator_name` VARCHAR(50) COMMENT '操作人名称',
+    `operation_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '操作时间',
+    `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    `create_by` BIGINT COMMENT '创建人',
+    `update_by` BIGINT COMMENT '更新人',
+    PRIMARY KEY (`id`),
+    INDEX `idx_asset_operation_asset_id` (`asset_id`),
+    INDEX `idx_asset_operation_time` (`operation_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='资产操作日志表';
+
+DROP TABLE IF EXISTS `sys_alarm_log`;
+CREATE TABLE `sys_alarm_log` (
+    `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT 'ID',
+    `config_id` BIGINT COMMENT '配置ID',
+    `config_name` VARCHAR(100) COMMENT '配置名称',
+    `event_code` VARCHAR(100) COMMENT '事件编码',
+    `alarm_title` VARCHAR(200) COMMENT '告警标题',
+    `request_method` VARCHAR(20) COMMENT '请求方法',
+    `request_path` VARCHAR(300) COMMENT '请求路径',
+    `success` TINYINT DEFAULT 1 COMMENT '是否成功',
+    `cost_ms` BIGINT COMMENT '耗时',
+    `error_message` VARCHAR(1000) COMMENT '错误信息',
+    `response_text` TEXT COMMENT '响应内容',
+    `detail_json` TEXT COMMENT '补充详情',
+    `sent_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '发送时间',
+    `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    `create_by` BIGINT COMMENT '创建人',
+    `update_by` BIGINT COMMENT '更新人',
+    PRIMARY KEY (`id`),
+    INDEX `idx_alarm_config_id` (`config_id`),
+    INDEX `idx_alarm_event_code` (`event_code`),
+    INDEX `idx_alarm_sent_at` (`sent_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='告警日志表';

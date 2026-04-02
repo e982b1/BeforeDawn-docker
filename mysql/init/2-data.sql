@@ -49,7 +49,8 @@ INSERT INTO `sys_dict_type` (`id`, `dict_code`, `dict_name`, `description`, `sys
 (4, 'vuln_status', '漏洞状态', '漏洞处理的生命周期状态', 1, 4),
 (5, 'asset_type', '资产类型', '信息资产的类型分类', 1, 5),
 (6, 'business_level', '业务重要性', '资产或系统的业务重要程度', 1, 6),
-(7, 'knowledge_category', '知识库分类', '知识库文章的类型分类', 1, 7);
+(7, 'knowledge_category', '知识库分类', '知识库文章的类型分类', 1, 7),
+(8, 'asset_status', '资产状态', '资产可用状态', 1, 8);
 
 -- ============================================
 -- 4. 初始化字典数据
@@ -122,6 +123,11 @@ INSERT INTO `sys_dict_data` (`id`, `dict_type_code`, `dict_label`, `dict_value`,
 (100046, 'business_level', '重要业务', 'high', 'orange', 2, 0, '重要业务系统，影响较大'),
 (100047, 'business_level', '一般业务', 'medium', 'blue', 3, 0, '一般业务系统'),
 (100048, 'business_level', '辅助业务', 'low', 'gray', 4, 0, '辅助或测试系统');
+
+-- 4.6.1 资产状态（asset_status）
+INSERT INTO `sys_dict_data` (`id`, `dict_type_code`, `dict_label`, `dict_value`, `dict_color`, `sort_order`, `status`, `system_flag`, `remark`) VALUES
+(100056, 'asset_status', '可用', '1', 'success', 1, 1, 0, '资产当前可正常使用'),
+(100057, 'asset_status', '停用', '0', 'info', 2, 1, 0, '资产当前已停用');
 
 -- 4.7 知识库分类（knowledge_category）
 INSERT INTO `sys_dict_data` (`id`, `dict_type_code`, `dict_label`, `dict_value`, `sort_order`, `system_flag`, `remark`) VALUES
